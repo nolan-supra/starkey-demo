@@ -14,7 +14,7 @@ import {useForm} from "react-hook-form";
 import {yupResolver} from "@hookform/resolvers/yup";
 import * as yup from "yup";
 import {ISupraTransaction} from "@/lib/types";
-import {BCS, TxnBuilderTypes, HexString} from "aptos";
+import {BCS, TxnBuilderTypes, HexString} from "supra-l1-sdk";
 import Link from "next/link";
 import {Textarea} from "@/components/ui/textarea"
 import nacl from "tweetnacl";
