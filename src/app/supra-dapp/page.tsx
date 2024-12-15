@@ -14,7 +14,7 @@ import {useForm} from "react-hook-form";
 import {yupResolver} from "@hookform/resolvers/yup";
 import * as yup from "yup";
 import {ISupraTransaction} from "@/lib/types";
-import {BCS, TxnBuilderTypes} from "aptos";
+import {BCS, TxnBuilderTypes, HexString} from "aptos";
 import Link from "next/link";
 import {Textarea} from "@/components/ui/textarea"
 import nacl from "tweetnacl";
@@ -209,14 +209,13 @@ export default function SupraDAppPage() {
         const rawTxPayload = [
             accounts[0],
             0,
-            "0x8943a2c0dc9b08597cbde5d806bf86c69beb7007a4ac401a7f5b520f994e145c",
-            "slot_prediction",
-            "create_prediction",
+            "0000000000000000000000000000000000000000000000000000000000000001",
+            "supra_account",
+            "transfer",
             [],
             [
-                BCS.bcsSerializeU256(slot_id),
-                BCS.bcsSerializeUint64(coins),
-                BCS.bcsSerializeUint64(reference_price),
+                new HexString("0x8de4158b48633d853186d5fc790718e5821d7d3c4855e06bcd97b105389a7d0f").toUint8Array(),
+                BCS.bcsSerializeUint64(100000000)
             ],
             optionalTransactionPayloadArgs
         ];
