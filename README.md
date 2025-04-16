@@ -1,6 +1,6 @@
 # Star Key Web Wallet Connect Demo
 
-This demo site for test **StarKey** Wallet connect
+This demo site for testing **StarKey** Wallet connect
 
 
 ## Run Locally

@@ -22,11 +22,6 @@ export interface ISendTokenProps {
   walletBalance?: IWalletBalance;
 }
 
-export interface IMetaMaskAccount {
-  id: string;
-  username: string;
-  address: string;
-}
 
 export interface ISupraTransaction {
   hash: string;
@@ -34,4 +29,11 @@ export interface ISupraTransaction {
   from?: string;
   to?: string;
   value?: string;
+}
+export interface IConnectedWalletProps {
+  isConnected: boolean;
+  wallet: any;
+  accounts: string[];
+  chainId: string;
+  balance?: bigint;
 }
