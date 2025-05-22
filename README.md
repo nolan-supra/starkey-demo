@@ -8,7 +8,7 @@ This demo site for testing **StarKey** Wallet connect
 Clone the project
 
 ```bash
-  git clone git@github.com:Entropy-Foundation/frontend-web-wallet-connect-demo.git
+  git clone git@github.com:nolan-supra/starkey-demo.git
 ```
 
 Go to the project directory

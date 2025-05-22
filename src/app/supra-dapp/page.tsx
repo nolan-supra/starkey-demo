@@ -1,26 +1,28 @@
 "use client";
 
-import React, {useEffect, useState} from "react";
 import {Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,} from "@/components/ui/card";
+import {useEffect, useState} from "react";
 
-import {Button} from "@/components/ui/button";
-import {Copy, ExternalLink, Loader2,} from "lucide-react";
 import {Badge} from "@/components/ui/badge";
-import {copyToClipBoard, shortenAddress} from "@/lib/utils";
-import {ethers} from "ethers";
+import {Button} from "@/components/ui/button";
 import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage,} from "@/components/ui/form";
 import {Input} from "@/components/ui/input";
-import {useForm} from "react-hook-form";
-import {yupResolver} from "@hookform/resolvers/yup";
-import * as yup from "yup";
 import {ISupraTransaction} from "@/lib/types";
-import {BCS, HexString} from "aptos";
-import Link from "next/link";
-import {Textarea} from "@/components/ui/textarea"
-import nacl from "tweetnacl";
-import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
+import {copyToClipBoard, shortenAddress} from "@/lib/utils";
+import {yupResolver} from "@hookform/resolvers/yup";
+import {ethers} from "ethers";
+import {Copy, ExternalLink, Loader2,} from "lucide-react";
+import {useForm} from "react-hook-form";
+import * as yup from "yup";
+
 import {Checkbox} from "@/components/ui/checkbox";
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
+import {Textarea} from "@/components/ui/textarea";
+import Link from "next/link";
+import nacl from "tweetnacl";
 import {useSearchParams} from "next/navigation";
+// @ts-ignore
+import {BCS, HexString, SupraAccount, SupraClient, TxnBuilderTypes} from "supra-l1-sdk";
 
 declare global {
     interface Window {
@@ -36,6 +38,7 @@ const formSchema = yup.object().shape({
         .matches(/^0x[a-zA-Z0-9]{32,}$/, "Invalid address"),
     amount: yup
         .number()
+        .default(0)
         .test("maxDecimalPlaces", "Must have 6 decimal or less", (number) =>
             /^\d+(\.\d{1,6})?$/.test(String(number))
         )
@@ -65,14 +68,20 @@ export default function SupraDAppPage() {
     const [balance, setBalance] = useState<string>("");
     const [loading, setLoading] = useState<boolean>(false);
     const [rawTxLoading, setRawTxLoading] = useState<boolean>(false);
+    const [rawAutoTxLoading, setAutoRawTxLoading] = useState<boolean>(false);
     const [signMsgLoading, setSignMsgLoading] = useState<boolean>(false);
     const [signMessage, setSignMessage] = useState<string>('');
     const [isHexMessage, setIsHexMessage] = useState<boolean>(false);
     const [signatureResp, setSignatureResp] = useState<SignMessageResponse | undefined>(undefined);
     const [transactions, setTransactions] = useState<ISupraTransaction[]>([]);
+    const [isSponsorTx, setIsSponsorTx] = useState<boolean>(false);
+    const [waitForTransaction, setWaitForTransaction] = useState<boolean>(true);
+    const [sponsorPrivateKey, setSponsorPrivateKey] = useState<string>('');
+    const [rpcUrl, setRpcUrl] = useState<string>('');
+
 
     const [deviceType, setDeviceType] = useState('loading')
-    const [autoWalletConnectChecked,setAutoWalletConnectChecked] = useState(false)
+    const [autoWalletConnectChecked, setAutoWalletConnectChecked] = useState(false)
     useEffect(() => {
         const userAgent = navigator.userAgent || navigator.vendor
         if (/android/i.test(userAgent)) {
@@ -92,7 +101,7 @@ export default function SupraDAppPage() {
         defaultValues: {
             address: "",
             amount: undefined,
-            isRawTx:false
+            isRawTx: false
         },
     });
     const {
@@ -125,7 +134,9 @@ export default function SupraDAppPage() {
         if (supraProvider) {
             const data = await supraProvider.getChainId();
             if (data) {
+                console.log({data})
                 setNetworkData(data)
+                setRpcUrl(data.chainId === '8' ? 'https://rpc-wallet-mainnet.supra.com' : 'https://rpc-testnet.supra.com/')
             }
         }
     };
@@ -185,12 +196,12 @@ export default function SupraDAppPage() {
 
     const switchToChain = async () => {
         if (selectedChainId && supraProvider) {
-            await supraProvider.changeNetwork({chainId:selectedChainId});
+            await supraProvider.changeNetwork({chainId: selectedChainId});
             await getNetworkData()
         }
     };
 
-    const resetWalletWalletData = ()=>{
+    const resetWalletWalletData = () => {
         setAccounts([]);
         setBalance("");
         setNetworkData({});
@@ -222,7 +233,6 @@ export default function SupraDAppPage() {
         let slot_id: bigint = BigInt(4);
         let coins: bigint = BigInt(0);
         let reference_price: bigint = BigInt(0);
-
 
 
         // Set expiration time for raw transaction to 30 seconds
@@ -278,7 +288,10 @@ export default function SupraDAppPage() {
                 to: "0xd25f78655f32e2534dfc26fc45391c5e3b3ccd82ce7f3992b76ef7d01b474a55",
                 chainId: networkData.chainId,
                 value: "",
-            };
+                options: {
+                    waitForTransaction
+                }
+            }
             const txHash = await supraProvider.sendTransaction(params);
             console.log("txHash :: ", txHash);
             addTransactions(txHash || "failed");
@@ -287,7 +300,7 @@ export default function SupraDAppPage() {
     };
     const sendAutomationTransaction = async () => {
         console.log("~~ sendAutomationTransaction ~~~");
-        setRawTxLoading(true);
+        setAutoRawTxLoading(true);
         let slot_id: bigint = BigInt(4);
         let coins: bigint = BigInt(0);
         let reference_price: bigint = BigInt(0);
@@ -357,7 +370,7 @@ export default function SupraDAppPage() {
             console.log("txHash :: ", txHash);
             addTransactions(txHash || "failed");
         }
-        setRawTxLoading(false);
+        setAutoRawTxLoading(false);
     };
 
     const remove0xPrefix = (hexString: string) => {
@@ -368,10 +381,10 @@ export default function SupraDAppPage() {
         setSignatureResp(undefined)
 
         const haxString = '0x' + Buffer.from(signMessage, 'utf8').toString('hex')
-        let response ;
-        if (isHexMessage){
-             response = await supraProvider.signHexMessage({message: signMessage })
-        }else{
+        let response;
+        if (isHexMessage) {
+            response = await supraProvider.signHexMessage({message: signMessage})
+        } else {
             response = await supraProvider.signMessage({message: haxString})
         }
         console.log('signMessage response :: ', response)
@@ -417,63 +430,139 @@ export default function SupraDAppPage() {
             });
             supraProvider.on("disconnect", () => {
                 console.log("~~~~~~~disconnect  :::")
-                 resetWalletWalletData()
+                resetWalletWalletData()
             });
         }
 
     }, [supraProvider]);
 
-    const onSubmit = async (data: { address: string; amount: number; isRawTx?:boolean }) => {
-        console.log(data);
-        setLoading(true);
-        const amount = ethers.parseUnits(data.amount.toString(), 8).toString();
+    const onSubmit = async (data: { address: string; amount: number; isRawTx?: boolean }) => {
+        try {
+            console.log(data);
+            setLoading(true);
+            const amount = ethers.parseUnits(data.amount.toString(), 8).toString();
 
-        const tx = {
-            data: "",
-            from: accounts[0],
-            to: data.address,
-            value: amount,
-            chainId: networkData.chainId
-        };
+            const tx = {
+                data: "",
+                from: accounts[0],
+                to: data.address,
+                value: amount,
+                chainId: networkData.chainId
+            };
+            if (data.isRawTx) {
+                const amountInBigInt = BigInt(amount)
+                const receiverAccount = HexString.ensure(data.address)
+                const optionalTransactionPayloadArgs = {}
+                const rawTxPayload = [
+                    accounts[0],
+                    0,
+                    "0x0000000000000000000000000000000000000000000000000000000000000001",
+                    "supra_account",
+                    "transfer",
+                    [],
+                    [receiverAccount.toUint8Array(), BCS.bcsSerializeUint64(amountInBigInt)],
+                    optionalTransactionPayloadArgs
+                ];
+                console.log("rawTxPayload :: ", rawTxPayload, receiverAccount);
+                const rawTxData = await supraProvider.createRawTransactionData(rawTxPayload);
+                console.log("rawTxData :: ", rawTxData);
+                tx.data = rawTxData
+            }
 
-        if (data.isRawTx){
-            const amountInBigInt = BigInt(amount)
-            const receiverAccount = HexString.ensure(data.address)
-            const optionalTransactionPayloadArgs= {}
-            const rawTxPayload = [
-                accounts[0],
-                0,
-                "0x0000000000000000000000000000000000000000000000000000000000000001",
-                "supra_account",
-                "transfer",
-                [],
-                [receiverAccount.toUint8Array(), BCS.bcsSerializeUint64(amountInBigInt)],
-                optionalTransactionPayloadArgs
-            ];
-            console.log("rawTxPayload :: ", rawTxPayload,receiverAccount);
-            const rawTxData = await supraProvider.createRawTransactionData(rawTxPayload);
-            console.log("rawTxData :: ", rawTxData);
-            tx.data = rawTxData
+            if (isSponsorTx) {
+                const supraClient = await SupraClient.init(rpcUrl)
+                let feePayerAccount = new SupraAccount(
+                    Uint8Array.from(
+                        Buffer.from(
+                            remove0xPrefix(sponsorPrivateKey),
+                            "hex"
+                        )
+                    )
+                );
+                const receiverAddress = HexString.ensure(data.address)
+                const amountInBigInt = BigInt(amount)
+                // Creating RawTransaction for sponsor transaction
+                let sponsorTxSupraCoinTransferRawTransaction =
+                    await supraClient.createRawTxObject(
+                        HexString.ensure(accounts[0]),
+                        (await supraClient.getAccountInfo(accounts[0])).sequence_number,
+                        "0000000000000000000000000000000000000000000000000000000000000001",
+                        "supra_account",
+                        "transfer",
+                        [],
+                        [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(amountInBigInt)],
+                    );
+
+                // Creating Sponsor Transaction Payload
+                let sponsorTransactionPayload = new TxnBuilderTypes.FeePayerRawTransaction(
+                    sponsorTxSupraCoinTransferRawTransaction,
+                    [],
+                    new TxnBuilderTypes.AccountAddress(feePayerAccount.address().toUint8Array())
+                );
+                tx.data = BCS.bcsToBytes(sponsorTransactionPayload)
+
+                // Generating sponsor authenticator
+                let feePayerAuthenticator = SupraClient.signSupraMultiTransaction(
+                    feePayerAccount,
+                    sponsorTransactionPayload
+                );
+
+                const signerAuthenticator = await supraProvider.signTransaction(tx);
+                if (signerAuthenticator) {
+                    const sponsorTxSenderAuthenticator = new TxnBuilderTypes.AccountAuthenticatorEd25519(
+                        new TxnBuilderTypes.Ed25519PublicKey(Buffer.from(signerAuthenticator.Ed25519.public_key, "hex")),
+                        new TxnBuilderTypes.Ed25519Signature(Buffer.from(signerAuthenticator.Ed25519.signature, "hex"))
+                    );
+                    const sendSponsorTransaction =
+                        await supraClient.sendSponsorTransaction(
+                            feePayerAccount.address().toString(),
+                            [],
+                            sponsorTxSupraCoinTransferRawTransaction,
+                            sponsorTxSenderAuthenticator,
+                            feePayerAuthenticator,
+                            [],
+                            {
+                                enableWaitForTransaction: true,
+                                enableTransactionSimulation: true,
+                            }
+                        )
+                    if (sendSponsorTransaction.result === 'Success') {
+                        console.log("txHash :: ", sendSponsorTransaction.txHash);
+                        addTransactions(sendSponsorTransaction.txHash);
+                    }
+
+                }
+                setLoading(false);
+                return null
+
+            }
+            console.log('sending tx :: ', tx);
+            // setTransaction(undefined);
+            // @ts-ignore
+            const txHash = await supraProvider.sendTransaction({
+                ...tx, options: {
+                    waitForTransaction
+                }
+            });
+            console.log("~~ txHash :: ", txHash);
+            if (txHash) {
+                addTransactions(txHash);
+            }
+            setLoading(false);
+
+        } catch (e) {
+            setLoading(false);
+
         }
-        console.log('sending tx :: ', tx);
-
-        // setTransaction(undefined);
-        // @ts-ignore
-        const txHash = await supraProvider.sendTransaction(tx);
-        console.log("txHash :: ", txHash);
-        if (txHash) {
-            addTransactions(txHash);
-        }
-        setLoading(false);
     };
 
     const autoWalletConnect = searchParams.get('wallet_connect_onload') === 'true'
     useEffect(() => {
-        if (!autoWalletConnectChecked && autoWalletConnect  && supraProvider) {
+        if (!autoWalletConnectChecked && autoWalletConnect && supraProvider) {
             void connectWallet();
             setAutoWalletConnectChecked(true)
         }
-    }, [autoWalletConnect,supraProvider,autoWalletConnectChecked]);
+    }, [autoWalletConnect, supraProvider, autoWalletConnectChecked]);
     return (
         <main className="py-24 text-center">
             <div className="text-center relative">
@@ -492,8 +581,10 @@ export default function SupraDAppPage() {
 
                                     {deviceType === 'mobile' ? (
                                         <>
-                                            <p className="lg:text-2xl mt-4"> It looks like you&apos;re using a mobile browser. </p>
-                                            <p className="lg:text-2xl mt-4 mb-4"> To connect, open this page in your wallet&apos;s dApp browser. </p>
+                                            <p className="lg:text-2xl mt-4"> It looks like you&apos;re using a mobile
+                                                browser. </p>
+                                            <p className="lg:text-2xl mt-4 mb-4"> To connect, open this page in your
+                                                wallet&apos;s dApp browser. </p>
 
                                             <Link
                                                 href={`https://starkey.app/dApps?url=${encodeURIComponent(`${window.location.href}?wallet_connect_onload=true`)}`}
@@ -506,7 +597,8 @@ export default function SupraDAppPage() {
                                         </>
                                     ) : (
                                         <>
-                                            <p className="mb-4">Install the browser extension and create your wallet to continue.</p>
+                                            <p className="mb-4">Install the browser extension and create your wallet to
+                                                continue.</p>
                                             <Link
                                                 href="https://chromewebstore.google.com/detail/starkey-wallet-the-offici/hcjhpkgbmechpabifbggldplacolbkoh" // Replace with your extension link
                                                 target="_blank"
@@ -593,6 +685,7 @@ export default function SupraDAppPage() {
                                             <SelectContent>
                                                 <SelectItem value="8">Supra MainNet (8)</SelectItem>
                                                 <SelectItem value="6">Supra TestNet (6)</SelectItem>
+                                                <SelectItem value="255">AutoNet (255)</SelectItem>
                                             </SelectContent>
                                         </Select>
                                     </div>
@@ -631,7 +724,7 @@ export default function SupraDAppPage() {
                                     onChange={(event) => {
                                         setSignMessage(event.target.value)
                                     }}/>
-                 
+
 
                                 <div className={'flex justify-between mt-4'}>
                                     <div>
@@ -654,15 +747,15 @@ export default function SupraDAppPage() {
                                         </div>
                                     </div>
                                     <div>
-                                    <Button
-                                        variant={"default"}
-                                        disabled={signMsgLoading || signMessage.trim().length === 0}
-                                        onClick={handleSignMessage}
-                                    >
-                                        {signMsgLoading && (
-                                            <Loader2 className="mr-2 h-4 w-4 animate-spin"/>                                        )}
-                                        Sign message
-                                    </Button>
+                                        <Button
+                                            variant={"default"}
+                                            disabled={signMsgLoading || signMessage.trim().length === 0}
+                                            onClick={handleSignMessage}
+                                        >
+                                            {signMsgLoading && (
+                                                <Loader2 className="mr-2 h-4 w-4 animate-spin"/>)}
+                                            Sign message
+                                        </Button>
                                     </div>
                                 </div>
 
@@ -730,16 +823,46 @@ export default function SupraDAppPage() {
                                         <FormField
                                             control={form.control}
                                             name="isRawTx"
-                                            render={({ field }) => (
+                                            render={({field}) => (
                                                 <FormItem className="flex items-center gap-2">
                                                     <FormControl>
-                                                        <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                                                        <Checkbox checked={field.value}
+                                                                  onCheckedChange={field.onChange}/>
                                                     </FormControl>
                                                     <FormLabel className={'!mt-0'}>Send as Raw Transaction</FormLabel>
-                                                    <FormMessage />
+                                                    <FormMessage/>
                                                 </FormItem>
                                             )}
                                         />
+                                        <Card className="w-full m-auto mt-4 bg-green-200">
+
+                                            <CardContent className="grid gap-1 text-left  p-2 pt-0">
+                                                <label className="inline-flex items-center gap-2 cursor-pointer mt-2">
+                                                    <Checkbox
+                                                        checked={isSponsorTx}
+                                                        onCheckedChange={(value) => {
+                                                            setIsSponsorTx(value as boolean);
+                                                        }}
+                                                    />
+                                                    <span className="text-sm font-medium">Sponsor Transaction</span>
+                                                </label>
+                                                {isSponsorTx &&
+                                                    <div className={'mt-4'}>
+                                                        <label className="text-sm font-medium">Sponsor private
+                                                            key</label>
+                                                        <Input
+                                                            placeholder="Sponsor private key"
+                                                            value={sponsorPrivateKey}
+                                                            className={'mt-0'}
+                                                            onChange={(event) => {
+                                                                setSponsorPrivateKey(event.target.value)
+                                                            }}
+                                                        />
+                                                    </div>
+                                                }
+
+                                            </CardContent>
+                                        </Card>
 
                                         <div className="text-center">
 
@@ -749,35 +872,43 @@ export default function SupraDAppPage() {
                                                 )}
                                                 Send Token
                                             </Button>
-
                                         </div>
+                                        <label className="inline-flex items-center gap-2 cursor-pointer mt-4">
+                                            <Checkbox
+                                                checked={waitForTransaction}
+                                                onCheckedChange={(value) => {
+                                                    setWaitForTransaction(value as boolean);
+                                                }}
+                                            />
+                                            <span className="text-sm font-medium text-red-600">Wait for transaction completion</span>
+                                        </label>
                                     </form>
                                 </Form>
 
-                              <div className={"border-t-2 mt-4"}>
-                                  <Button
-                                      variant="secondary"
-                                      className={"mt-4 w-full"}
-                                      disabled={rawTxLoading}
-                                      onClick={sendAutomationTransaction}
-                                  >
-                                      {rawTxLoading && (
-                                          <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
-                                      )}
-                                      Test Automation Transaction
-                                  </Button>
-                                  <Button
-                                      variant={"outline"}
-                                      className={"mt-4 w-full"}
-                                      disabled={rawTxLoading}
-                                      onClick={sendRawTransaction}
-                                  >
-                                      {rawTxLoading && (
-                                          <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
-                                      )}
-                                      Test Raw Transaction
-                                  </Button>
-                              </div>
+                                <div className={"border-t-2 mt-4"}>
+                                    <Button
+                                        variant="secondary"
+                                        className={"mt-4 w-full"}
+                                        disabled={rawAutoTxLoading}
+                                        onClick={sendAutomationTransaction}
+                                    >
+                                        {rawAutoTxLoading && (
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
+                                        )}
+                                        Test Automation Transaction
+                                    </Button>
+                                    <Button
+                                        variant={"outline"}
+                                        className={"mt-4 w-full"}
+                                        disabled={rawTxLoading}
+                                        onClick={sendRawTransaction}
+                                    >
+                                        {rawTxLoading && (
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
+                                        )}
+                                        Test Raw Transaction
+                                    </Button>
+                                </div>
                             </CardContent>
                         </Card>
                     )}
